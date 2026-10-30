@@ -31,7 +31,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from . import arv, scoring
+from . import arv, comp_map, scoring
 from .comps import (
     PROPERTY_TYPE_ALIASES,
     _subject_street_key,
@@ -444,27 +444,50 @@ def lookup_property(address: str) -> dict:
     return {"subject": _subject_out(subject)}
 
 
-def get_arv(address: str, *, sqft=None, beds=None, baths=None, year_built=None, lot_sqft=None,
-            property_type=None, stories=None, garage=None, has_pool=None, latitude=None, longitude=None,
-            radius_mi=None, days_back=None, include_market_context: bool = True,
-            max_comps: int | None = None) -> dict:
+def _run_public(address, latitude, longitude, call):
+    """Shared input checks and error mapping for the public entry points."""
     address = (address or "").strip()
     if not address:
         raise ArvError("INVALID_INPUT", "address is required")
     if (latitude is None) != (longitude is None):
         raise ArvError("INVALID_INPUT", "latitude and longitude must be given together")
     try:
-        return _get_arv(address, _clean_facts(dict(
-            sqft=sqft, beds=beds, baths=baths, year_built=year_built, lot_sqft=lot_sqft,
-            property_type=property_type, stories=stories, garage=garage, has_pool=has_pool)),
-            latitude, longitude, _window(radius_mi, days_back), include_market_context,
-            min(MAX_COMPS_CAP, max(1, int(max_comps or DEFAULT_MAX_COMPS))))
+        return call(address)
     except RateLimited as e:
         raise ArvError("RATE_LIMITED", str(e), retry_after_s=e.retry_after_s) from e
     except UpstreamError as e:
         raise ArvError("UPSTREAM_ERROR", str(e)) from e
     except (TypeError, ValueError) as e:
         raise ArvError("INVALID_INPUT", f"Invalid input: {e}") from e
+
+
+def get_arv(address: str, *, sqft=None, beds=None, baths=None, year_built=None, lot_sqft=None,
+            property_type=None, stories=None, garage=None, has_pool=None, latitude=None, longitude=None,
+            radius_mi=None, days_back=None, include_market_context: bool = True,
+            max_comps: int | None = None) -> dict:
+    facts = dict(sqft=sqft, beds=beds, baths=baths, year_built=year_built, lot_sqft=lot_sqft,
+                 property_type=property_type, stories=stories, garage=garage, has_pool=has_pool)
+    return _run_public(address, latitude, longitude, lambda addr: _get_arv(
+        _analyze(addr, _clean_facts(facts), latitude, longitude, _window(radius_mi, days_back),
+                 include_market_context),
+        min(MAX_COMPS_CAP, max(1, int(max_comps or DEFAULT_MAX_COMPS)))))
+
+
+def get_comp_map(address: str, *, sqft=None, beds=None, baths=None, year_built=None, lot_sqft=None,
+                 property_type=None, stories=None, garage=None, has_pool=None, latitude=None, longitude=None,
+                 radius_mi=None, days_back=None, **_ignored) -> dict:
+    """Everything the comps map needs, for the same inputs as get_arv: the
+    subject and every sold comp and active/pending listing with coordinates
+    and ready-made marker/popup HTML (comp_map.py). Served from the same
+    caches as get_arv, so opening the map after an estimate costs no requests.
+    Extra get_arv-only arguments (max_comps, include_market_context) are
+    accepted and ignored, so the map can pass the tool's arguments straight
+    through."""
+    facts = dict(sqft=sqft, beds=beds, baths=baths, year_built=year_built, lot_sqft=lot_sqft,
+                 property_type=property_type, stories=stories, garage=garage, has_pool=has_pool)
+    return _run_public(address, latitude, longitude, lambda addr: comp_map.build_map_payload(
+        _analyze(addr, _clean_facts(facts), latitude, longitude, _window(radius_mi, days_back),
+                 include_market_context=True)))
 
 
 def _fetch(subject: dict, window: Window, include_market_context: bool):
@@ -483,7 +506,34 @@ def _fetch(subject: dict, window: Window, include_market_context: bool):
     return list(sold), (list(market) if market is not None else None)
 
 
-def _get_arv(address, facts, latitude, longitude, window: Window, include_market_context, max_comps) -> dict:
+@dataclass
+class Analysis:
+    """One subject's full comp analysis: the shared core of get_arv (which
+    shapes it for the model) and get_comp_map (which shapes it for the map)."""
+    subject: dict
+    window: Window
+    comps: list[dict]                 # sold comps, subject's own sales removed
+    own_sales: list[dict]             # the subject's own sales found in the window
+    market: list[dict] | None         # active/pending listings, None when not fetched
+    classified: list[arv.CompVerdict]
+    est: dict
+    recency_half_life: float
+    guidance: list[str]               # input and property-type notes so far
+
+    @property
+    def eligible(self) -> list[arv.CompVerdict]:
+        return [v for v in self.classified if v.eligible]
+
+    @property
+    def excluded(self) -> list[arv.CompVerdict]:
+        return [v for v in self.classified if not v.eligible]
+
+    @property
+    def fallback(self) -> bool:
+        return not self.est["eligible"]
+
+
+def _analyze(address, facts, latitude, longitude, window: Window, include_market_context) -> Analysis:
     subject = _resolve_subject(address, facts, latitude, longitude)
     guidance: list[str] = list(window.adjusted)
 
@@ -519,9 +569,14 @@ def _get_arv(address, facts, latitude, longitude, window: Window, include_market
     if est is None:
         raise ArvError("NO_COMPS", "Comps were found, but none had a usable location or price to anchor an "
                        "estimate.", subject=_subject_out(subject))
-    eligible = [v for v in classified if v.eligible]
-    excluded = [v for v in classified if not v.eligible]
-    fallback = not est["eligible"]
+    return Analysis(subject=subject, window=window, comps=comps, own_sales=own_sales, market=market,
+                    classified=classified, est=est, recency_half_life=half_life, guidance=guidance)
+
+
+def _get_arv(a: Analysis, max_comps: int) -> dict:
+    subject, window, est, market, own_sales = a.subject, a.window, a.est, a.market, a.own_sales
+    guidance = list(a.guidance)
+    eligible, excluded, fallback = a.eligible, a.excluded, a.fallback
     tier = arv.comp_confidence_tier(eligible)
     renovated = None if fallback else arv.renovated_range(eligible, subject["sqft"])
     stats = _pool_stats(eligible)

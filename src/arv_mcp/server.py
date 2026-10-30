@@ -1,17 +1,22 @@
 """
-server.py — the MCP server: tools, instructions and a prompt over service.py.
+server.py — the MCP server: tools, instructions, a prompt and a comps-map
+view over service.py.
 
 Run with the `arv-mcp` command (stdio transport). Tool calls run the
 blocking HomeHarvest work in worker threads, at most ARV_MCP_MAX_CONCURRENT
-at a time, so a slow scrape never freezes the server.
+at a time, so a slow scrape never freezes the server. In hosts that support
+MCP Apps, get_arv's result also opens ui/comp_map.html, which fetches its
+data through the app-only get_comp_map tool.
 """
 
 import logging
 import os
 import sys
+from importlib import resources
 from typing import Annotated, Any
 
 import anyio
+from mcp.server.apps import Apps, ResourceCsp
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import Field
@@ -77,14 +82,41 @@ Returns ADDRESS_NOT_VERIFIED / ADDRESS_NOT_FOUND errors when no record matches
 the exact street and unit. Use get_arv for valuations.
 """
 
+COMP_MAP_DESCRIPTION = """\
+Comps-map data for the get_arv map view: the subject and every sold comp and
+active/pending listing with coordinates and marker/popup HTML. Called by the
+map itself, not by the model.
+"""
+
 READ_ONLY = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True)
 
 _LOG_LEVEL = os.environ.get("ARV_MCP_LOG_LEVEL", "WARNING").upper()
 if _LOG_LEVEL not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
     _LOG_LEVEL = "WARNING"
 
-server = MCPServer("arv-mcp", instructions=INSTRUCTIONS, version=__version__, log_level=_LOG_LEVEL)
 _capacity = anyio.CapacityLimiter(max(1, int(os.environ.get("ARV_MCP_MAX_CONCURRENT", "2"))))
+
+# ── Comps map (MCP Apps) ──────────────────────────────────────────────────────
+# Hosts that support MCP Apps render ui/comp_map.html next to get_arv's result;
+# other clients just get get_arv's normal result. The page loads Leaflet and
+# its marker plugin from pinned, integrity-checked CDN files and draws map
+# tiles from OpenStreetMap (street) and Esri (satellite); nothing else may load.
+COMP_MAP_URI = "ui://arv-mcp/comp-map.html"
+COMP_MAP_CSP = ResourceCsp(resource_domains=[
+    "https://cdn.jsdelivr.net",       # Leaflet 1.9.3, Font Awesome 6.2.0
+    "https://cdnjs.cloudflare.com",   # Leaflet.awesome-markers 2.0.2
+    "https://tile.openstreetmap.org",
+    "https://server.arcgisonline.com",
+])
+apps = Apps()
+apps.add_html_resource(
+    COMP_MAP_URI,
+    (resources.files("arv_mcp") / "ui" / "comp_map.html").read_text(encoding="utf-8"),
+    name="comp_map",
+    title="Comps map",
+    description="Map of the subject, its sold comps and nearby active/pending listings.",
+    csp=COMP_MAP_CSP,
+)
 
 
 async def _run(fn, *args, **kwargs) -> dict[str, Any]:
@@ -101,8 +133,8 @@ async def _run(fn, *args, **kwargs) -> dict[str, Any]:
     return await anyio.to_thread.run_sync(call, limiter=_capacity)
 
 
-@server.tool(name="get_arv", title="Estimate ARV from sold comps", description=GET_ARV_DESCRIPTION,
-             annotations=READ_ONLY)
+@apps.tool(resource_uri=COMP_MAP_URI, name="get_arv", title="Estimate ARV from sold comps",
+           description=GET_ARV_DESCRIPTION, annotations=READ_ONLY)
 async def get_arv(
     address: Annotated[str, Field(description="Full street address, e.g. '1234 E Main St, Mesa, AZ 85204'. "
                                               "Include the unit number for condos/townhomes.")],
@@ -135,6 +167,36 @@ async def get_arv(
                       year_built=year_built, lot_sqft=lot_sqft, stories=stories, garage=garage, has_pool=has_pool,
                       latitude=latitude, longitude=longitude, radius_mi=radius_mi, days_back=days_back,
                       include_market_context=include_market_context, max_comps=max_comps)
+
+
+@apps.tool(resource_uri=COMP_MAP_URI, visibility=["app"], name="get_comp_map", title="Comps map data",
+           description=COMP_MAP_DESCRIPTION, annotations=READ_ONLY)
+async def get_comp_map(
+    address: str,
+    sqft: int | None = None,
+    property_type: str | None = None,
+    beds: float | None = None,
+    baths: float | None = None,
+    year_built: int | None = None,
+    lot_sqft: int | None = None,
+    stories: int | None = None,
+    garage: float | None = None,
+    has_pool: bool | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    radius_mi: float | None = None,
+    days_back: int | None = None,
+) -> dict[str, Any]:
+    return await _run(service.get_comp_map, address, sqft=sqft, property_type=property_type, beds=beds,
+                      baths=baths, year_built=year_built, lot_sqft=lot_sqft, stories=stories, garage=garage,
+                      has_pool=has_pool, latitude=latitude, longitude=longitude, radius_mi=radius_mi,
+                      days_back=days_back)
+
+
+# Extensions are fixed when the server is constructed, so this comes after the
+# app-bound tools and resource above are registered on `apps`.
+server = MCPServer("arv-mcp", instructions=INSTRUCTIONS, version=__version__, log_level=_LOG_LEVEL,
+                   extensions=[apps])
 
 
 @server.tool(name="lookup_property", title="Look up a property's facts", description=LOOKUP_DESCRIPTION,

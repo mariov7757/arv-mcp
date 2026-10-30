@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comps map</title>
+<!-- Same libraries and versions the WholesaleAutomater dashboard map used (via Folium), pinned with SRI. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"
+      integrity="sha384-o/2yZuJZWGJ4s/adjxVW71R+EO/LyCwdQfP5UWSgX/w87iiTXuvDZaejd3TsN7mf" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"
+      integrity="sha384-AHhmp36MxTYxqK8q9BF7ifcAjDEpcCT+OOmZrBb8vBP6At1I/htDyRK/M8wgzuqx" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"
+      integrity="sha384-SOnAn/m2fVJCwnbEYgD4xzrPtvsXdElhOVvR8ND1YjB5nhGNwwf7nBQlhfAwHAZC" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"
+        integrity="sha384-okbbMvvx/qfQkmiQKfd5VifbKZ/W8p1qIsWvE1ROPUfHWsDcC8/BnHohF7vPg2T6" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"
+        integrity="sha384-p96PkhiqMxDcor51hgckjZOJvsNNKl4Uy25L8da4p+suI14Ftn3sOuFs+IPN4vFm" crossorigin="anonymous"></script>
+<style>
+  /* Host theme variables (MCP Apps) win when provided; these are the fallbacks. */
+  :root {
+    --bg: var(--color-background-primary, #ffffff);
+    --fg: var(--color-text-primary, #31333f);
+    --muted: var(--color-text-secondary, #6b6f7b);
+    --border: var(--color-border-primary, #d6d8de);
+    --chip-bg: var(--color-background-secondary, #f0f2f6);
+    --chip-on: #31333f;
+    --chip-on-fg: #ffffff;
+    --font: var(--font-sans, "Source Sans Pro", "Segoe UI", system-ui, sans-serif);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: var(--color-background-primary, #0e1117);
+    --fg: var(--color-text-primary, #fafafa);
+    --muted: var(--color-text-secondary, #a3a8b8);
+    --border: var(--color-border-primary, #31333f);
+    --chip-bg: var(--color-background-secondary, #262730);
+    --chip-on: #fafafa;
+    --chip-on-fg: #0e1117;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; }
+  .frame { border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px 12px; display: grid; gap: 10px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: flex-end; }
+  .control { display: grid; gap: 4px; }
+  .control label { font-size: 13px; color: var(--fg); }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 13px; padding: 5px 12px; border: 0; border-right: 1px solid var(--border);
+    background: var(--bg); color: var(--fg); cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-fg); }
+  .seg button:focus-visible { outline: 2px solid #ff4b4b; outline-offset: -2px; }
+  .extra-count { font-size: 13px; color: var(--muted); padding-bottom: 5px; }
+  .title { margin: 0; font-size: 14px; }
+  #map { height: 520px; width: 100%; border-radius: 4px; }
+  .caption { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .status { padding: 40px 16px; text-align: center; color: var(--muted); }
+  .status.error { color: #b42318; }
+  .leaflet-popup-content { margin: 10px 12px; }
+  .leaflet-popup-content a { color: #1c64f2; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="controls" id="controls" hidden>
+    <div class="control">
+      <label id="basemap-label">Basemap</label>
+      <div class="seg" role="group" aria-labelledby="basemap-label" id="basemap"></div>
+    </div>
+    <div class="control">
+      <label id="window-label">Sold within</label>
+      <div class="seg" role="group" aria-labelledby="window-label" id="window"></div>
+    </div>
+    <div class="extra-count" id="extra-count" hidden></div>
+  </div>
+  <p class="title" id="title" hidden></p>
+  <div id="map" hidden></div>
+  <div class="status" id="status">Loading comps…</div>
+  <p class="caption" id="legend" hidden></p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── MCP Apps transport: JSON-RPC 2.0 over postMessage to the host ──────────
+  var nextId = 1;
+  var pending = {};
+  var handlers = {};
+
+  function post(msg) { window.parent.postMessage(msg, "*"); }
+
+  function request(method, params) {
+    var id = nextId++;
+    post({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
+    return new Promise(function (resolve, reject) { pending[id] = { resolve: resolve, reject: reject }; });
+  }
+
+  function notify(method, params) { post({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  window.addEventListener("message", function (event) {
+    if (event.source !== window.parent) return;
+    var msg = event.data;
+    if (!msg || msg.jsonrpc !== "2.0") return;
+    if (msg.id !== undefined && pending[msg.id] && !msg.method) {
+      var p = pending[msg.id];
+      delete pending[msg.id];
+      if (msg.error) p.reject(new Error(msg.error.message || "Request failed"));
+      else p.resolve(msg.result);
+    } else if (msg.method && handlers[msg.method]) {
+      handlers[msg.method](msg.params || {});
+    }
+  });
+
+  // ── Theme and size ─────────────────────────────────────────────────────────
+  function applyHostContext(ctx) {
+    if (!ctx) return;
+    if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    var vars = ctx.styles && ctx.styles.variables;
+    if (vars) {
+      Object.keys(vars).forEach(function (k) {
+        if (vars[k]) document.documentElement.style.setProperty(k, vars[k]);
+      });
+    }
+  }
+
+  function reportSize() {
+    notify("ui/notifications/size-changed", {
+      width: Math.ceil(document.documentElement.scrollWidth),
+      height: Math.ceil(document.documentElement.scrollHeight),
+    });
+  }
+  new ResizeObserver(reportSize).observe(document.body);
+
+  // ── UI helpers ─────────────────────────────────────────────────────────────
+  var statusEl = document.getElementById("status");
+
+  function showStatus(text, isError) {
+    statusEl.textContent = text;
+    statusEl.className = "status" + (isError ? " error" : "");
+    statusEl.hidden = false;
+  }
+
+  function segmented(container, options, initial, onChange) {
+    options.forEach(function (opt) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = opt;
+      b.setAttribute("aria-pressed", String(opt === initial));
+      b.addEventListener("click", function () {
+        container.querySelectorAll("button").forEach(function (x) {
+          x.setAttribute("aria-pressed", String(x === b));
+        });
+        onChange(opt);
+      });
+      container.appendChild(b);
+    });
+  }
+
+  // Links inside popups open through the host (the sandbox can't navigate).
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[data-open-link]");
+    if (!a) return;
+    e.preventDefault();
+    request("ui/open-link", { url: a.href }).catch(function () {});
+  });
+
+  // ── The map (mirrors the WholesaleAutomater listing-detail map) ───────────
+  var BASEMAP_STREET = "🗺️ Street", BASEMAP_SATELLITE = "🛰️ Satellite";
+  var ESRI_IMAGERY = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+
+  function render(data) {
+    var map = L.map("map", { zoomControl: true, preferCanvas: false }).setView(
+      [data.subject.lat, data.subject.lon], 17);
+    L.control.scale().addTo(map);
+
+    var street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      minZoom: 0, maxZoom: 19, maxNativeZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    });
+    var satellite = L.tileLayer(ESRI_IMAGERY, {
+      maxZoom: 19, attribution: "Tiles © Esri — Esri, Maxar, Earthstar Geographics",
+    });
+    street.addTo(map);
+
+    var soldLayer = L.layerGroup().addTo(map);
+    var windowDays = data.time_windows;
+    var current = data.default_time_window;
+
+    function drawSold() {
+      soldLayer.clearLayers();
+      var maxDays = windowDays[current];
+      var shown = data.sold.filter(function (s) { return (s.days_ago || 0) <= maxDays; });
+      shown.forEach(function (s) {
+        L.marker([s.lat, s.lon], {
+          icon: L.divIcon({ html: s.icon, iconSize: [0, 0], className: "" }),
+          zIndexOffset: s.eligible ? 500 : 0,   // ARV comps sit on top of the plain ones
+        }).bindPopup(s.popup, { maxWidth: 260 }).addTo(soldLayer);
+      });
+      var title = document.getElementById("title");
+      title.innerHTML = "<b>Comp Map</b> — " + shown.length + " sold within " + current +
+        " (≤" + data.radius_mi + " mi, zoom out to see more)";
+    }
+
+    if (data.extra.length) {
+      var extraLayer = L.layerGroup();
+      data.extra.forEach(function (c) {
+        L.marker([c.lat, c.lon], { icon: L.divIcon({ html: c.icon, iconSize: [0, 0], className: "" }) })
+          .bindPopup(c.popup, { maxWidth: 260 }).addTo(extraLayer);
+      });
+      extraLayer.addTo(map);
+      L.control.layers({}, { "🔎 Active & Pending": extraLayer }, { position: "topright", collapsed: true }).addTo(map);
+      var count = document.getElementById("extra-count");
+      count.textContent = "🔎 " + data.extra.length + " active/pending nearby";
+      count.hidden = false;
+    }
+
+    L.marker([data.subject.lat, data.subject.lon], {
+      icon: L.AwesomeMarkers.icon({ markerColor: "orange", iconColor: "white", icon: "home", prefix: "fa",
+                                   extraClasses: "fa-rotate-0" }),
+      zIndexOffset: 1000,
+    }).bindTooltip("Subject property").bindPopup(data.subject.popup, { maxWidth: 260 }).addTo(map);
+
+    segmented(document.getElementById("basemap"), [BASEMAP_STREET, BASEMAP_SATELLITE], BASEMAP_STREET,
+      function (choice) {
+        if (choice === BASEMAP_SATELLITE) { map.removeLayer(street); satellite.addTo(map); }
+        else { map.removeLayer(satellite); street.addTo(map); }
+      });
+    segmented(document.getElementById("window"), Object.keys(windowDays), current, function (choice) {
+      current = choice;
+      drawSold();
+    });
+
+    drawSold();
+    var legend = document.getElementById("legend");
+    legend.textContent = data.legend;
+    legend.hidden = false;
+    reportSize();
+  }
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  var MAP_ARGS = ["address", "sqft", "property_type", "beds", "baths", "year_built", "lot_sqft", "stories",
+                  "garage", "has_pool", "latitude", "longitude", "radius_mi", "days_back"];
+  var started = false;
+
+  function payloadOf(result) {
+    if (result && result.structuredContent) return result.structuredContent;
+    var block = result && (result.content || []).find(function (b) { return b.type === "text"; });
+    try { return block ? JSON.parse(block.text) : null; } catch (e) { return null; }
+  }
+
+  function loadMap(args) {
+    if (started) return;
+    started = true;
+    var mapArgs = {};
+    MAP_ARGS.forEach(function (k) { if (args[k] !== undefined && args[k] !== null) mapArgs[k] = args[k]; });
+    request("tools/call", { name: "get_comp_map", arguments: mapArgs }).then(function (result) {
+      var data = payloadOf(result);
+      if (!data || result.isError) throw new Error("The map data could not be loaded.");
+      if (data.error) throw new Error(data.error.message);
+      if (typeof L === "undefined") throw new Error("The map library didn't load.");
+      statusEl.hidden = true;
+      document.getElementById("controls").hidden = false;
+      document.getElementById("title").hidden = false;
+      document.getElementById("map").hidden = false;
+      render(data);
+    }).catch(function (err) {
+      showStatus(err.message || "The map could not be loaded.", true);
+      reportSize();
+    });
+  }
+
+  handlers["ui/notifications/tool-input"] = function (params) { loadMap(params.arguments || {}); };
+  handlers["ui/notifications/tool-result"] = function (params) {
+    // get_arv itself failed (e.g. the address needs more facts): nothing to map.
+    var data = payloadOf(params);
+    if (!started && data && data.error) showStatus(data.error.message, true);
+  };
+  handlers["ui/notifications/host-context-changed"] = applyHostContext;
+
+  request("ui/initialize", {
+    appInfo: { name: "arv-mcp comps map", version: "1" },
+    appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+    protocolVersion: "2026-01-26",
+  }).then(function (result) {
+    applyHostContext(result && result.hostContext);
+    notify("ui/notifications/initialized", {});
+  }).catch(function () {
+    showStatus("This view needs an MCP Apps host to load its data.", true);
+  });
+})();
+</script>
+</body>
+</html>

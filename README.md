@@ -92,6 +92,27 @@ that cost it points and any distress flags), `excluded_comps` (with
 reasons), `market_context` and `guidance`. Unknown facts are `null`, never
 `0`.
 
+#### Comps map
+
+In hosts that support [MCP Apps](https://modelcontextprotocol.io/extensions/apps)
+(for example Claude on the web and desktop), `get_arv` also opens an
+interactive map next to the answer:
+
+- the subject as an orange home pin
+- sold comps as price tags: green ⭐ for comps that fed the estimate, blue for
+  the rest
+- active and pending listings as teal 🏠 and purple ⏳ tags, with ⭐ when they
+  would qualify as comps
+- a popup on every tag with its facts and, for comps that weren't used, the
+  reason
+- Street/Satellite basemaps, a "Sold within" filter (3M, 6M, 1Y, All) and a
+  layer toggle for active/pending listings
+
+The map gets its data through an app-only tool, `get_comp_map`, which the
+model never sees. Opening it reuses `get_arv`'s cached data, so it costs no
+extra requests. Clients without MCP Apps support just get the normal
+`get_arv` result.
+
 ### `lookup_property`
 
 The verified record for an address: size, beds/baths, year, lot, stories,
