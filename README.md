@@ -197,7 +197,7 @@ instantly.
 ```bash
 pip install -e ".[dev]"
 pytest            # offline suite; real network calls are blocked
-pytest -m live    # smoke tests against Realtor.com and the Census geocoder
+ARV_MCP_LIVE_ADDRESS="<a real address>" pytest -m live   # smoke tests against Realtor.com + Census
 ruff check src tests
 ```
 
