@@ -1,0 +1,50 @@
+{
+  "manifest_version": "0.4",
+  "name": "arv-mcp",
+  "display_name": "ARV Estimator",
+  "version": "0.0.0",
+  "description": "Estimate a home's after-repair value from scored, gated sold comps, with the evidence and a comps map.",
+  "long_description": "Ask Claude \"What's the ARV of 1234 Main Street?\" and it gets a typical value, a renovated range and a confidence tier, backed by the nearby sold comps that support it and the ones that were thrown out, with reasons. In Claude Desktop the answer also shows an interactive map of the comps and the homes listed nearby.\n\nData comes from public listings on Realtor.com (via HomeHarvest) and can be wrong or missing. The estimate is a starting point, not an appraisal.",
+  "author": {
+    "name": "Mario Verdugo",
+    "url": "https://github.com/mariov7757"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mariov7757/arv-mcp"
+  },
+  "homepage": "https://github.com/mariov7757/arv-mcp",
+  "documentation": "https://github.com/mariov7757/arv-mcp#readme",
+  "support": "https://github.com/mariov7757/arv-mcp/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "src/arv_mcp/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "--frozen", "--no-dev", "arv-mcp"]
+    }
+  },
+  "tools": [
+    {
+      "name": "get_arv",
+      "description": "Estimate a property's value from nearby sold comps and return the evidence, with an interactive comps map in supporting apps."
+    },
+    {
+      "name": "lookup_property",
+      "description": "Look up the verified Realtor.com record for an address."
+    }
+  ],
+  "keywords": ["real estate", "arv", "comps", "valuation", "appraisal", "property"],
+  "license": "MIT",
+  "privacy_policies": [
+    "https://www.realtor.com/privacy-policy/",
+    "https://www.census.gov/about/policies/privacy.html"
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  }
+}
