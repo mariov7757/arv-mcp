@@ -120,12 +120,14 @@ can act on them:
 
 ## Install
 
-Requires Python 3.11+. Not on PyPI yet; install from GitHub.
+Requires Python 3.11+. Published on [PyPI](https://pypi.org/project/arv-mcp/)
+and listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.mariov7757/arv-mcp`.
 
 **Claude Code**
 
 ```bash
-claude mcp add arv-mcp -- uvx --from git+https://github.com/mariov7757/arv-mcp arv-mcp
+claude mcp add arv-mcp -- uvx arv-mcp
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`)
@@ -135,11 +137,20 @@ claude mcp add arv-mcp -- uvx --from git+https://github.com/mariov7757/arv-mcp a
   "mcpServers": {
     "arv-mcp": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/mariov7757/arv-mcp", "arv-mcp"]
+      "args": ["arv-mcp"]
     }
   }
 }
 ```
+
+**pip**
+
+```bash
+pip install arv-mcp
+```
+
+To run the unreleased `main` branch instead, use
+`uvx --from git+https://github.com/mariov7757/arv-mcp arv-mcp`.
 
 **From a clone**
 
@@ -156,7 +167,7 @@ client at the installed executable:
 
 ```powershell
 uv venv $HOME\.arv-mcp
-uv pip install --python $HOME\.arv-mcp\Scripts\python.exe git+https://github.com/mariov7757/arv-mcp
+uv pip install --python $HOME\.arv-mcp\Scripts\python.exe arv-mcp
 claude mcp add arv-mcp -- $HOME\.arv-mcp\Scripts\arv-mcp.exe
 ```
 
