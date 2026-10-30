@@ -141,6 +141,19 @@ can act on them:
 
 ## Install
 
+**Claude Desktop: one-click install (recommended)**
+
+1. Download [`arv-mcp.mcpb`](https://github.com/mariov7757/arv-mcp/releases/latest/download/arv-mcp.mcpb)
+   from the latest release.
+2. Double-click it, or drag it into Claude Desktop's **Settings → Extensions**,
+   and click **Install**.
+
+That's it: no terminal, no config file, and nothing else to install. Claude
+Desktop sets up Python and the dependencies itself; the first launch takes
+about half a minute while it does.
+
+**For developers**
+
 Requires Python 3.11+. Published on [PyPI](https://pypi.org/project/arv-mcp/)
 and listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as
 `io.github.mariov7757/arv-mcp`.
@@ -269,6 +282,12 @@ The [Release workflow](.github/workflows/release.yml) then:
 - stamps the version into `server.json` and publishes it to the
   [MCP Registry](https://registry.modelcontextprotocol.io) as
   `io.github.mariov7757/arv-mcp`, authenticated by GitHub OIDC
+- builds the Claude Desktop extension (`arv-mcp.mcpb`, see
+  [`scripts/build_mcpb.py`](scripts/build_mcpb.py)), validates it with the
+  official `mcpb` CLI, and attaches it to a GitHub Release
+
+To build the extension locally (needs [uv](https://docs.astral.sh/uv/)):
+`python scripts/build_mcpb.py`, which writes `dist/arv-mcp.mcpb`.
 
 PyPI versions are permanent. A broken release gets yanked on PyPI and
 replaced by the next patch version; a version number is never reused.
