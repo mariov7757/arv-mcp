@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "arv-mcp"
-version = "0.1.0"
+# The version lives only in src/arv_mcp/__init__.py (see [tool.hatch.version]).
+dynamic = ["version"]
 description = "MCP server that estimates after-repair value (ARV) from scored, gated sold comps."
 readme = "README.md"
 license = "MIT"
@@ -12,6 +13,16 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Mario Verdugo" }]
 keywords = ["mcp", "real-estate", "arv", "comps", "appraisal"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+]
 dependencies = [
     "anyio>=4",
     # data/client.py subclasses HomeHarvest internals; pinned to the tested range.
@@ -33,6 +44,10 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/mariov7757/arv-mcp"
+Issues = "https://github.com/mariov7757/arv-mcp/issues"
+
+[tool.hatch.version]
+path = "src/arv_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/arv_mcp"]

@@ -1,0 +1,137 @@
+name: Release
+
+# Publishes a tagged version to PyPI and the MCP Registry.
+# Release by bumping __version__ in src/arv_mcp/__init__.py, then pushing a
+# matching tag: git tag v0.2.0 && git push origin v0.2.0
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Check, test and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tag must match __version__
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(python -c 'import re; print(re.search(r"__version__ = \"([^\"]+)\"", open("src/arv_mcp/__init__.py").read()).group(1))')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $pkg in src/arv_mcp/__init__.py"
+            exit 1
+          fi
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
+
+      - name: README carries the MCP Registry ownership marker
+        run: |
+          name="$(jq -r .name server.json)"
+          grep -q "mcp-name: $name" README.md || { echo "::error::README.md is missing 'mcp-name: $name'"; exit 1; }
+
+      - name: Lint and test
+        run: |
+          pip install -e ".[dev]"
+          ruff check src tests
+          pytest
+
+      - name: Build and check distributions
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/arv-mcp/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write  # PyPI Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  registry:
+    name: Publish to MCP Registry
+    needs: [build, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # MCP Registry GitHub OIDC login
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      # Pinned and signature-verified below. Bump deliberately; if publishing
+      # fails with "invalid audience", this release is too old for the registry.
+      MCP_PUBLISHER_VERSION: v1.8.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version into server.json
+        run: |
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+
+      - name: Wait for the release to appear on PyPI
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "https://pypi.org/pypi/arv-mcp/$VERSION/json" > /dev/null; then
+              echo "arv-mcp $VERSION is live on PyPI"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::arv-mcp $VERSION did not appear on PyPI within 5 minutes"
+          exit 1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          rm -f "$archive" "$archive.sigstore.json"
+
+      - name: Log in to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to the MCP Registry
+        run: ./mcp-publisher publish

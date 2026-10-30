@@ -1,5 +1,7 @@
 # arv-mcp
 
+<!-- mcp-name: io.github.mariov7757/arv-mcp -->
+
 An [MCP](https://modelcontextprotocol.io) server that estimates a home's
 **after-repair value (ARV)** from nearby sold comps, and hands the model the
 scored evidence behind the number so it can explain, check and challenge it.
@@ -216,6 +218,31 @@ src/arv_mcp/
 
 The scoring engine was extracted from a private wholesale-real-estate
 pipeline where it priced thousands of Phoenix-area listings.
+
+### Releasing
+
+The version lives in one place: `__version__` in `src/arv_mcp/__init__.py`.
+
+1. Bump `__version__` (patch for fixes, minor for new tools, parameters or
+   fields) and merge to `main` with CI green.
+2. Tag the release and push the tag:
+
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The [Release workflow](.github/workflows/release.yml) then:
+
+- checks that the tag matches `__version__`
+- runs lint and tests, and builds the package
+- publishes to PyPI with Trusted Publishing (no API token)
+- stamps the version into `server.json` and publishes it to the
+  [MCP Registry](https://registry.modelcontextprotocol.io) as
+  `io.github.mariov7757/arv-mcp`, authenticated by GitHub OIDC
+
+PyPI versions are permanent. A broken release gets yanked on PyPI and
+replaced by the next patch version; a version number is never reused.
 
 ## License
 

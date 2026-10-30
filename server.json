@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mariov7757/arv-mcp",
+  "title": "ARV Estimator",
+  "description": "Estimate a home's after-repair value from scored, gated sold comps, with the evidence.",
+  "repository": {
+    "url": "https://github.com/mariov7757/arv-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "arv-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ARV_MCP_REQUESTS_PER_MIN",
+          "description": "Realtor.com requests per minute (token bucket).",
+          "default": "30",
+          "isRequired": false
+        },
+        {
+          "name": "ARV_MCP_MAX_CONCURRENT",
+          "description": "Tool calls processed at once.",
+          "default": "2",
+          "isRequired": false
+        },
+        {
+          "name": "ARV_MCP_LOG_LEVEL",
+          "description": "Log level for stderr logging.",
+          "default": "WARNING",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
