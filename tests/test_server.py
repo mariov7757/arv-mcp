@@ -12,7 +12,7 @@ def _run(coro_fn, *a, **kw):
 
 def test_tools_and_schemas():
     tools = {t.name: t for t in _run(server.server.list_tools)}
-    assert set(tools) == {"get_arv", "lookup_property"}
+    assert set(tools) == {"get_arv", "lookup_property", "get_comp_map"}
     get_arv = tools["get_arv"]
     assert get_arv.input_schema["required"] == ["address"]
     assert {"sqft", "property_type", "latitude", "longitude", "radius_mi", "days_back",
@@ -71,3 +71,57 @@ def test_call_tool_end_to_end(monkeypatch, name):
     monkeypatch.setattr(service, name, lambda address, **kw: {"ok": address})
     result = _run(server.server.call_tool, name, {"address": "1 Main St"})
     assert "1 Main St" in str(result)
+
+
+# ── Comps map (MCP Apps) ──────────────────────────────────────────────────────
+
+def test_get_arv_opens_the_comps_map_and_map_tool_is_app_only():
+    tools = {t.name: t for t in _run(server.server.list_tools)}
+    assert tools["get_arv"].meta == {"ui": {"resourceUri": server.COMP_MAP_URI}}
+    assert tools["get_comp_map"].meta["ui"] == {"resourceUri": server.COMP_MAP_URI, "visibility": ["app"]}
+    assert tools["get_comp_map"].annotations.read_only_hint is True
+    assert "lookup_property" in tools and not (tools["lookup_property"].meta or {}).get("ui")
+
+
+def test_comp_map_resource_is_served_with_its_csp():
+    (res,) = _run(server.server.list_resources)
+    assert res.uri == server.COMP_MAP_URI
+    assert res.mime_type == "text/html;profile=mcp-app"
+    domains = res.meta["ui"]["csp"]["resourceDomains"]
+    assert set(domains) == {"https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com",
+                            "https://tile.openstreetmap.org", "https://server.arcgisonline.com"}
+    assert "connectDomains" not in res.meta["ui"]["csp"]  # the page never fetches; tiles are images
+    (content,) = _run(server.server.read_resource, server.COMP_MAP_URI)
+    html = content.content
+    assert html.lstrip().lower().startswith("<!doctype html>")
+    assert "ui/initialize" in html and "get_comp_map" in html
+
+
+def test_comp_map_page_only_loads_from_declared_domains_with_integrity():
+    import re
+    (content,) = _run(server.server.read_resource, server.COMP_MAP_URI)
+    html = content.content
+    declared = set(server.COMP_MAP_CSP.resource_domains)
+    for tag in re.findall(r"<(?:script|link)[^>]*>", html):
+        url = re.search(r'(?:src|href)="([^"]+)"', tag)
+        if not url or not url.group(1).startswith("http"):
+            continue
+        origin = "/".join(url.group(1).split("/")[:3])
+        assert origin in declared, f"{origin} is not in the page's CSP"
+        assert 'integrity="sha384-' in tag and 'crossorigin="anonymous"' in tag
+    for origin in re.findall(r"https://[a-z0-9.-]+", html):
+        if origin in ("https://www.openstreetmap.org",):  # attribution link, not a load
+            continue
+        assert origin in declared, f"{origin} is referenced but not declared"
+
+
+def test_get_comp_map_tool_passes_arguments(monkeypatch):
+    seen = {}
+
+    def fake(address, **kw):
+        seen.update(address=address, **kw)
+        return {"subject": {}}
+
+    monkeypatch.setattr(service, "get_comp_map", fake)
+    assert _run(server.get_comp_map, "1 Main St", radius_mi=2.0, has_pool=True) == {"subject": {}}
+    assert seen["address"] == "1 Main St" and seen["radius_mi"] == 2.0 and seen["has_pool"] is True
