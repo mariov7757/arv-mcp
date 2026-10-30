@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arv-mcp"
+version = "0.1.0"
+description = "MCP server that estimates after-repair value (ARV) from scored, gated sold comps."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Mario Verdugo" }]
+keywords = ["mcp", "real-estate", "arv", "comps", "appraisal"]
+dependencies = [
+    "anyio>=4",
+    # data/client.py subclasses HomeHarvest internals; pinned to the tested range.
+    "homeharvest>=0.8.18,<0.9",
+    "mcp>=2.3,<3",
+    "pydantic>=2.0",
+    "requests>=2.31",
+    "tenacity>=8",
+]
+
+[project.scripts]
+arv-mcp = "arv_mcp.server:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[project.urls]
+Repository = "https://github.com/mariov7757/arv-mcp"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arv_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: hits HomeHarvest over the network (deselected by default)",
+]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+# Ported code keeps its aligned-column constant tables and long breakdown rows.
+ignore = ["E221", "E241", "E501"]

@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+.env.*
+
+# Local planning notes
+SCOPE.md
+
+# Local data (never source code)
+*.db
+*.sqlite
+*.gpkg
+/data/
+*.log
+*.log.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Tooling
+.claude/
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
