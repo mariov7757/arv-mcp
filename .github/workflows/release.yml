@@ -72,8 +72,9 @@ jobs:
         # Built outside dist/ so the PyPI upload never picks it up.
         run: |
           python scripts/build_mcpb.py --out mcpb
-          unzip -p mcpb/arv-mcp.mcpb manifest.json > mcpb-manifest.json
-          npx --yes @anthropic-ai/mcpb@2.1.2 validate mcpb-manifest.json
+          # Validate inside the unpacked bundle so the icon and entry point resolve.
+          unzip -q mcpb/arv-mcp.mcpb -d mcpb-unpacked
+          npx --yes @anthropic-ai/mcpb@2.1.2 validate mcpb-unpacked/manifest.json
           npx --yes @anthropic-ai/mcpb@2.1.2 info mcpb/arv-mcp.mcpb
 
       - uses: actions/upload-artifact@v4
