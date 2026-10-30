@@ -227,9 +227,6 @@ src/arv_mcp/
   data/geocode.py   Census geocoder
 ```
 
-The scoring engine was extracted from a private wholesale-real-estate
-pipeline where it priced thousands of Phoenix-area listings.
-
 ### Releasing
 
 The version lives in one place: `__version__` in `src/arv_mcp/__init__.py`.
