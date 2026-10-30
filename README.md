@@ -147,6 +147,17 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 claude mcp add arv-mcp -- "$PWD/.venv/bin/arv-mcp"
 ```
 
+**Windows: if `uvx` fails installing `pywin32`** (`os error 32` /
+"being used by another process", usually antivirus scanning uv's temporary
+build folder), install into a regular virtualenv instead and point the
+client at the installed executable:
+
+```powershell
+uv venv $HOME\.arv-mcp
+uv pip install --python $HOME\.arv-mcp\Scripts\python.exe git+https://github.com/mariov7757/arv-mcp
+claude mcp add arv-mcp -- $HOME\.arv-mcp\Scripts\arv-mcp.exe
+```
+
 ## Configuration
 
 All optional, via environment variables:
